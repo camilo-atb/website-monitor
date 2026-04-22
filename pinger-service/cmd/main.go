@@ -22,13 +22,13 @@ func main() {
 	httpClient := httpclient.NewHTTPClient()
 	configClient := configclient.NewConfigClient()
 
-	servicee := service.NewMonitor(configClient, httpClient, repo)
+	monitorService := service.NewMonitor(configClient, httpClient, repo)
 	resultService := service.NewResultService(repo)
 
 	handler := httpserver.NewHandler(resultService)
 
-	scheduler := scheduler.NewScheduler(servicee, 10*time.Second)
-	go scheduler.Start(ctx) // sheduler es bloqueante. Por eso lo corremos en una goroutine
+	scheduler := scheduler.NewScheduler(monitorService, 10*time.Second)
+	go scheduler.Start(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/results", handler.GetResults)
@@ -38,7 +38,23 @@ func main() {
 		Handler: mux,
 	}
 
-	if err := server.ListenAndServe(); err != nil {
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			panic(err)
+		}
+	}()
+
+	// Para el Ctrl + C
+	<-ctx.Done()
+	println("apagando sistema...")
+
+	// Apagar servidor http
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		panic(err)
 	}
+
+	println("servidor detenido correctamente")
 }
