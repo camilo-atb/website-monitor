@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"log"
 	"pinger/internal/domain/model"
 	"pinger/internal/domain/ports"
+	"sync"
 	"time"
 )
 
@@ -14,7 +14,7 @@ type monitor struct {
 	resultRepository ports.ResultRepositoryPort
 }
 
-func NewMonitor(configService ports.ConfigServicePort, httpClient ports.HTTPClientPort, resultRepository ports.ResultRepositoryPort) ports.MonitorPort {
+func NewMonitor(configService ports.ConfigServicePort, httpClient ports.HTTPClientPort, resultRepository ports.ResultRepositoryPort) *monitor {
 	return &monitor{
 		configService:    configService,
 		httpClient:       httpClient,
@@ -23,63 +23,70 @@ func NewMonitor(configService ports.ConfigServicePort, httpClient ports.HTTPClie
 }
 
 func (m *monitor) Run(ctx context.Context) error {
+
 	sites, err := m.configService.GetSites(ctx)
-
-	log.Printf("sites obtenidos: %d", len(sites))
-
 	if err != nil {
 		return err
 	}
 
-	if len(sites) == 0 {
-		return nil
+	workerCount := 5
+	jobs := make(chan model.MonitoredURL)
+
+	var wg sync.WaitGroup
+
+	// workers
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for site := range jobs {
+
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				statusCode, duration, err := m.httpClient.Get(ctx, site.URL)
+
+				result := model.PingResult{
+					URL:          site.URL,
+					CheckedAt:    time.Now(),
+					ResponseTime: duration,
+				}
+
+				if err != nil {
+					result.Status = "DOWN"
+					result.Error = err.Error()
+				} else {
+					result.StatusCode = statusCode
+
+					if statusCode >= 200 && statusCode < 300 {
+						result.Status = "UP"
+					} else {
+						result.Status = "DOWN"
+					}
+				}
+
+				_ = m.resultRepository.Save(ctx, result)
+			}
+		}()
 	}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
+LOOP: // label que identifica el loop para poder salir de él desde el select
 	for _, site := range sites {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		default:
+			break LOOP
+		case jobs <- site:
 		}
-
-		statusCode, duration, err := m.httpClient.Get(ctx, site.URL)
-
-		result := model.PingResult{
-			URL:          site.URL,
-			CheckedAt:    time.Now(),
-			ResponseTime: duration,
-		}
-
-		if err != nil {
-			result.Status = "DOWN"
-			result.Error = err.Error()
-		} else {
-			result.StatusCode = statusCode
-
-			if statusCode >= 200 && statusCode < 300 {
-				result.Status = "UP"
-			} else {
-				result.Status = "DOWN"
-			}
-		}
-
-		log.Printf(
-			"[PING] %s | status=%s | code=%d | time=%v | error=%s",
-			result.URL,
-			result.Status,
-			result.StatusCode,
-			result.ResponseTime,
-			result.Error,
-		)
-
-		_ = m.resultRepository.Save(ctx, result) // * No paramos el loop
 	}
+
+	close(jobs)
+
+	wg.Wait()
 
 	return nil
 }

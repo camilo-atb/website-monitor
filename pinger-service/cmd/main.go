@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os/signal"
+	"pinger/internal/adapters/input/httpserver"
 	"pinger/internal/adapters/input/scheduler"
 	"pinger/internal/adapters/output/configclient"
 	"pinger/internal/adapters/output/httpclient"
@@ -20,8 +22,23 @@ func main() {
 	httpClient := httpclient.NewHTTPClient()
 	configClient := configclient.NewConfigClient()
 
-	service := service.NewMonitor(configClient, httpClient, repo)
+	servicee := service.NewMonitor(configClient, httpClient, repo)
+	resultService := service.NewResultService(repo)
 
-	scheduler := scheduler.NewScheduler(service, 10*time.Second)
-	scheduler.Start(ctx)
+	handler := httpserver.NewHandler(resultService)
+
+	scheduler := scheduler.NewScheduler(servicee, 10*time.Second)
+	go scheduler.Start(ctx) // sheduler es bloqueante. Por eso lo corremos en una goroutine
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/results", handler.GetResults)
+
+	server := &http.Server{
+		Addr:    ":8081",
+		Handler: mux,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
+		panic(err)
+	}
 }
