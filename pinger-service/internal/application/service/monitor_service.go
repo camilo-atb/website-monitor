@@ -9,16 +9,16 @@ import (
 )
 
 type monitor struct {
-	configService    ports.ConfigServicePort
-	httpClient       ports.HTTPClientPort
-	resultRepository ports.ResultRepositoryPort
+	configService  ports.ConfigServicePort
+	httpClient     ports.HTTPClientPort
+	historyService ports.HistoryPort
 }
 
-func NewMonitor(configService ports.ConfigServicePort, httpClient ports.HTTPClientPort, resultRepository ports.ResultRepositoryPort) *monitor {
+func NewMonitor(configService ports.ConfigServicePort, httpClient ports.HTTPClientPort, historyService ports.HistoryPort) *monitor {
 	return &monitor{
-		configService:    configService,
-		httpClient:       httpClient,
-		resultRepository: resultRepository,
+		configService:  configService,
+		httpClient:     httpClient,
+		historyService: historyService,
 	}
 }
 
@@ -70,7 +70,7 @@ func (m *monitor) Run(ctx context.Context) error {
 					}
 				}
 
-				_ = m.resultRepository.Save(ctx, result)
+				_ = m.historyService.Save(ctx, result)
 			}
 		}()
 	}

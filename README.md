@@ -1,101 +1,123 @@
-# Website Monitor 🔍
+# Website Monitor
 
-Sistema de monitoreo de sitios web en tiempo real. Un proyecto modular que verifica continuamente la disponibilidad y rendimiento de URLs registradas.
+Proyecto pequeño para practicar:
 
-## 🎯 Idea General
+- Arquitectura Hexagonal (Ports and Adapters)
+- Microservicios
+- Comunicación entre servicios HTTP
 
-El sistema está diseñado como una arquitectura de microservicios con responsabilidades bien separadas:
+La idea es entender bien los conceptos con un sistema sencillo pero suficiente para ver responsabilidades separadas, contratos entre servicios y flujo completo de monitoreo.
 
-### 1. **Config Service** 🔧
-- **Responsabilidad**: Gestionar la configuración de sitios a monitorear
-- **Funcionalidades**:
-  - Registrar URLs para monitoreo
-  - Establecer frecuencia de revisión (ej: cada 10 segundos, cada 30 segundos)
-  - Almacenar y recuperar configuración de sitios
-  - API REST para CRUD de sitios
-- **Ejemplo**: 
-  ```
-  POST /sites
-    {
-    "url": "https://www.ejemplo.com",
-    "reviewTime": 10
-    }
-  ```
+## Servicios actuales (3)
 
-### 2. **Pinger Service** ❤️
-- **Responsabilidad**: El corazón del sistema - ejecuta el monitoreo real
-- **Funcionalidades**:
-  - Obtiene las URLs registradas del Config Service
-  - Realiza peticiones HTTP periódicamente
-  - Mide tiempos de respuesta
-  - Detecta fallos y cambios de estado
-  - Registra resultados de cada ping
+### 1) Config Service (puerto 8080)
+Responsable de registrar y listar los sitios a monitorear.
 
-### 3. **History Service** 📊 (Próximo)
-- **Responsabilidad**: Persistencia histórica de los pings
-- **Funcionalidades**:
-  - Almacenar cada resultado de ping
-  - Consultar histórico por sitio
-  - Análisis de disponibilidad (uptime)
+### 2) Pinger Service (worker - puerto 8081)
+Responsable de:
 
-### 4. **Alert Service** 🔔 (Opcional - Futuro)
-- **Responsabilidad**: Notificaciones cuando ocurren problemas
-- **Funcionalidades**:
-  - Detectar cambios de estado (UP → DOWN)
-  - Enviar alertas (consola, email, webhooks, etc.)
+- Pedir sitios al Config Service
+- Hacer los pings HTTP
+- Enviar cada resultado al History Service
 
-## 📁 Estructura del Proyecto
+Nota: este servicio ya no guarda historial local ni expone endpoint de resultados.
 
+### 3) History Service (puerto 8082)
+Responsable de:
+
+- Guardar resultados de ping
+- Exponer resumen histórico por URL (uptime, total checks, último estado)
+
+## Flujo
+
+1. Registras sitios en Config Service.
+2. Pinger Service consulta esos sitios periódicamente.
+3. Pinger envía cada resultado a History Service.
+4. Consultas el resumen en History Service.
+
+## Ejemplo para crear sitio (Config Service)
+
+POST http://localhost:8080/sites
+
+```json
+{
+  "url": "https://www.noexiste123450.com",
+  "reviewTime": 40
+}
 ```
+
+## Ejemplo para consultar historial/resumen (History Service)
+
+GET http://localhost:8082/results
+
+Respuesta ejemplo:
+
+```json
+[
+  {
+    "url": "https://www.instagram.com",
+    "uptime": 100,
+    "total_checks": 21,
+    "last_status": "UP",
+    "last_checked": "2026-04-23T09:38:01.8455988-05:00"
+  },
+  {
+    "url": "https://www.facebook.com",
+    "uptime": 100,
+    "total_checks": 21,
+    "last_status": "UP",
+    "last_checked": "2026-04-23T09:38:01.8516164-05:00"
+  },
+  {
+    "url": "https://example.com",
+    "uptime": 100,
+    "total_checks": 1553,
+    "last_status": "UP",
+    "last_checked": "2026-04-23T09:25:33.4930173-05:00"
+  },
+  {
+    "url": "https://www.noexiste123450.com",
+    "uptime": 0,
+    "total_checks": 21,
+    "last_status": "DOWN",
+    "last_checked": "2026-04-23T09:38:01.7141895-05:00"
+  },
+  {
+    "url": "https://www.youtube.com",
+    "uptime": 100,
+    "total_checks": 21,
+    "last_status": "UP",
+    "last_checked": "2026-04-23T09:38:01.808978-05:00"
+  },
+  {
+    "url": "https://www.google.com",
+    "uptime": 100,
+    "total_checks": 21,
+    "last_status": "UP",
+    "last_checked": "2026-04-23T09:38:01.8285973-05:00"
+  }
+]
+```
+
+## Estructura general
+
+```text
 website-monitor/
-├── config-service/          # Servicio de configuración
-│   ├── cmd/api/             # Punto de entrada
-│   ├── internal/
-│   │   ├── adapters/        # Handlers HTTP, repositorios
-│   │   ├── application/     # Lógica de negocio
-│   │   ├── domain/          # Modelos y puertos
-│   │   └── infrastructure/  # Conexiones BD
-│   └── go.mod
-│
-└── pinger-service/          # Servicio de monitoreo
-    ├── cmd/                 # Punto de entrada
-    ├── internal/
-    │   ├── adapters/        # Scheduler, clientes HTTP
-    │   ├── application/     # Lógica de servicio
-    │   ├── domain/          # Modelos y puertos
-    │   └── infrastructure/  # Persistencia
-    └── go.mod
+|- config-service/
+|- pinger-service/
+|- history-service/
 ```
 
-## 🏗️ Arquitectura
+## Estado actual
 
-El proyecto sigue **Arquitectura Hexagonal** (Ports & Adapters) con:
-- **Domain**: Modelos centrales (`Site`, `PingResult`)
-- **Ports**: Interfaces de entrada/salida
-- **Adapters**: Implementaciones concretas (HTTP, BD, Scheduler)
-- **Application**: Lógica de negocio de servicios
+- Arquitectura base de microservicios funcionando
+- Config -> Pinger -> History funcionando
+- Persistencia en memoria (sin base de datos)
 
-## 📈 Estado Actual
+## Futuro
 
-⚠️ **En desarrollo**
-- [x] Estructura base de servicios
-- [x] Config Service con modelos
-- [x] Pinger Service con scheduler
-- [ ] Persistencia real (bases de datos)
-- [ ] History Service
-- [ ] Alert Service
-- [ ] Tests
-- [ ] Documentación API
-
-## 🚀 Próximos Pasos
-
-1. Implementar persistencia en PostgreSQL
-2. Crear Historia de pings
-3. Agregar sistema de alertas
-4. Documentación Swagger/OpenAPI
-5. Docker & Docker Compose
-6. Tests unitarios e integración
+La siguiente evolución natural es un cuarto microservicio de alertas/notificaciones (por ejemplo cuando un sitio cambia de UP a DOWN).
 
 ---
 
-**Última actualización**: Abril 2026
+Ultima actualizacion: Abril 2026
